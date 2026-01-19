@@ -38,6 +38,3 @@ O objetivo do projeto é demonstrar, de forma prática, o uso de WebSockets no e
 - Endpoints STOMP (`@MessageMapping`)
 
 ---
-
-## 📂 Estrutura do Projeto (exemplo)
-
