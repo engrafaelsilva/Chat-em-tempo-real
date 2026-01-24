@@ -4,82 +4,263 @@
     <meta charset="UTF-8" />
     <title>Spring WebSocket + STOMP</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+
     <style>
-        body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:16px; }
-        .row { display:flex; gap:8px; margin:8px 0; }
-        input, button { padding:8px; }
-        #log { border:1px solid #ccc; min-height:220px; padding:8px; white-space:pre-wrap; }
-        .badge { padding:2px 6px; border:1px solid #999; border-radius:8px; font-size:12px; }
+        *{box-sizing:border-box}
+
+        body{
+            margin:0;
+            font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+            background: linear-gradient(135deg,#020617,#020617,#020617);
+            min-height:100vh;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            color:#e5e7eb;
+        }
+
+        .app{
+            width:100%;
+            max-width:900px;
+            height:95vh;
+            background:#020617;
+            border-radius:14px;
+            box-shadow:0 0 25px rgba(0,0,0,.6);
+            display:flex;
+            flex-direction:column;
+            overflow:hidden;
+        }
+
+        /* HEADER */
+        .header{
+            padding:12px 16px;
+            background:#020617;
+            border-bottom:1px solid #1e293b;
+            display:flex;
+            flex-wrap:wrap;
+            gap:10px;
+            align-items:center;
+        }
+
+        .header input{
+            background:#020617;
+            border:1px solid #1e293b;
+            border-radius:8px;
+            padding:10px;
+            color:#e5e7eb;
+            flex:1;
+            min-width:120px;
+        }
+
+        .header button{
+            padding:10px 14px;
+            border-radius:8px;
+            border:none;
+            background:#0284c7;
+            color:white;
+            cursor:pointer;
+        }
+
+        .header button:hover{filter:brightness(1.1)}
+
+        .badge{
+            padding:6px 12px;
+            border-radius:999px;
+            font-size:12px;
+            font-weight:600;
+            background:#7f1d1d;
+            color:#fecaca;
+        }
+
+        .badge.online{
+            background:#064e3b;
+            color:#6ee7b7;
+        }
+
+        /* CHAT AREA */
+        .chat{
+            flex:1;
+            padding:14px;
+            display:flex;
+            flex-direction:column;
+            overflow-y:auto;
+            gap:10px;
+            background: radial-gradient(circle at top,#020617,#020617);
+        }
+
+        .msg{
+            max-width:75%;
+            padding:10px 12px;
+            border-radius:14px;
+            line-height:1.3;
+            font-size:14px;
+            display:flex;
+            flex-direction:column;
+            animation:fade .2s ease;
+        }
+
+        @keyframes fade{from{opacity:0;transform:translateY(5px)}}
+
+        .msg.left{
+            align-self:flex-start;
+            background:#020617;
+            border:1px solid #1e293b;
+        }
+
+        .msg.right{
+            align-self:flex-end;
+            background:#0284c7;
+            color:white;
+        }
+
+        .msg .meta{
+            font-size:11px;
+            opacity:.7;
+            margin-top:4px;
+            align-self:flex-end;
+        }
+
+        /* FOOTER */
+        .footer{
+            padding:10px;
+            display:flex;
+            gap:8px;
+            border-top:1px solid #1e293b;
+        }
+
+        .footer input{
+            flex:1;
+            padding:12px;
+            border-radius:999px;
+            border:1px solid #1e293b;
+            background:#020617;
+            color:white;
+            outline:none;
+        }
+
+        .footer button{
+            padding:0 18px;
+            border-radius:999px;
+            border:none;
+            background:#0284c7;
+            color:white;
+            font-weight:600;
+            cursor:pointer;
+        }
+
+        /* MOBILE */
+        @media(max-width:600px){
+            .header{flex-direction:column}
+            .msg{max-width:90%}
+        }
     </style>
 </head>
+
 <body>
-<h2>Demo: Spring Boot + WebSocket (STOMP)</h2>
 
-<div class="row">
-    <label>Nome:</label><input id="name" value="Matheus"/>
-    <label>Sala:</label><input id="room" value="geral"/>
-    <button onclick="connect()">Conectar</button>
-    <button onclick="disconnect()">Desconectar</button>
-    <span id="status" class="badge">offline</span>
+<div class="app">
+
+    <div class="header">
+        <input id="name" value="Rafael" placeholder="Seu nome">
+        <input id="room" value="geral" placeholder="Sala">
+        <button onclick="connect()">Conectar</button>
+        <button onclick="disconnect()">Sair</button>
+        <span id="status" class="badge">offline</span>
+    </div>
+
+    <div id="chat" class="chat"></div>
+
+    <div class="footer">
+        <input id="msg" placeholder="Digite sua mensagem...">
+        <button onclick="send()">Enviar</button>
+    </div>
+
 </div>
 
-<div class="row">
-    <input id="msg" placeholder="Escreva sua mensagem..." style="flex:1"/>
-    <button onclick="send()">Enviar</button>
-</div>
-
-<h3>Mensagens</h3>
-<div id="log"></div>
-
-<!-- libs (CDN) -->
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client/dist/sockjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/stompjs/lib/stomp.min.js"></script>
-<script>
-    let stompClient = null;
-    let subscription = null;
 
-    function log(line){
-        const box = document.getElementById('log');
-        box.textContent += line + "\n";
-        box.scrollTop = box.scrollHeight;
-    }
+<script>
+    let stompClient=null;
+    let subscription=null;
+
+    const chatBox=document.getElementById("chat");
+    const inputMsg=document.getElementById("msg");
+
     function setStatus(on){
-        const s = document.getElementById('status');
-        s.textContent = on ? 'online' : 'offline';
-        s.style.color = on ? 'green' : 'red';
+        const s=document.getElementById("status");
+        s.textContent=on?"online":"offline";
+        s.className="badge "+(on?"online":"");
+    }
+
+    function now(){
+        const d=new Date();
+        return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+    }
+
+    function addMessage({from,content,sentAt}, self=false){
+        const div=document.createElement("div");
+        div.className="msg "+(self?"right":"left");
+        div.innerHTML=`
+        <strong>${from}</strong>
+        <span>${content}</span>
+        <span class="meta">${sentAt||now()}</span>
+    `;
+        chatBox.appendChild(div);
+        chatBox.scrollTop=chatBox.scrollHeight;
     }
 
     function connect(){
-        const socket = new SockJS('http://localhost:8080/ws');
-        stompClient = Stomp.over(socket);
-        stompClient.debug = null; // silencioso
-        stompClient.connect({}, () => {
+        const socket=new SockJS('http://localhost:8080/ws');
+        stompClient=Stomp.over(socket);
+        stompClient.debug=null;
+
+        stompClient.connect({},()=>{
             setStatus(true);
-            const room = document.getElementById('room').value || 'geral';
-            if (subscription) subscription.unsubscribe();
-            subscription = stompClient.subscribe(`/topic/chat/${room}`, (frame) => {
-                const m = JSON.parse(frame.body);
-                log(`[${m.sentAt}] ${m.from ?? 'anon'}: ${m.content}`);
+            const room=document.getElementById("room").value||"geral";
+
+            if(subscription)subscription.unsubscribe();
+
+            subscription=stompClient.subscribe(`/topic/chat/${room}`,frame=>{
+                const m=JSON.parse(frame.body);
+                const me=document.getElementById("name").value||"anon";
+                addMessage({
+                    from:m.from||"anon",
+                    content:m.content||"",
+                    sentAt:m.sentAt||now()
+                }, m.from===me);
             });
-            log('✅ Conectado e inscrito em /topic/chat/' + room);
-        }, (err) => {
-            setStatus(false);
-            log('❌ Erro: ' + err);
         });
     }
 
     function disconnect(){
-        if (stompClient) stompClient.disconnect(() => setStatus(false));
+        if(stompClient)stompClient.disconnect(()=>setStatus(false));
     }
 
     function send(){
-        if (!stompClient || !stompClient.connected) return log('⚠️ Não conectado.');
-        const room = document.getElementById('room').value || 'geral';
-        const from = document.getElementById('name').value || 'anon';
-        const content = document.getElementById('msg').value || '';
-        stompClient.send(`/app/chat.send/${room}`, {}, JSON.stringify({ from, content, type: "CHAT" }));
-        document.getElementById('msg').value = '';
+        if(!stompClient||!stompClient.connected)return;
+
+        const room=document.getElementById("room").value||"geral";
+        const from=document.getElementById("name").value||"anon";
+        const content=inputMsg.value.trim();
+
+        if(!content)return;
+
+        stompClient.send(`/app/chat.send/${room}`,{},JSON.stringify({
+            from,content,type:"CHAT"
+        }));
+
+        inputMsg.value="";
     }
+
+    /* ENTER PARA ENVIAR */
+    inputMsg.addEventListener("keydown",e=>{
+        if(e.key==="Enter" && !e.shiftKey){
+            e.preventDefault();
+            send();
+        }
+    });
 </script>
+
 </body>
 </html>
